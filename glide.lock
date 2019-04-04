@@ -1,0 +1,54 @@
+hash: f98ab7d91a52b46b3e25535af976f57a6b41ca3f3c0dc381659cd393709a79df
+updated: 2019-04-04T17:39:35.660371+03:00
+imports:
+- name: github.com/alecthomas/template
+  version: a0175ee3bccc567396460bf5acd36800cb10c49c
+  subpackages:
+  - parse
+- name: github.com/alecthomas/units
+  version: 2efee857e7cfd4f3d0138cc3cbb1b4966962b93a
+- name: github.com/beorn7/perks
+  version: 3a771d992973f24aa725d07868b467d1ddfceafb
+  subpackages:
+  - quantile
+- name: github.com/golang/protobuf
+  version: d3c38a4eb4970272b87a425ae00ccc4548e2f9bb
+  subpackages:
+  - proto
+- name: github.com/konsorten/go-windows-terminal-sequences
+  version: f55edac94c9bbba5d6182a4be46d86a2c9b5b50e
+- name: github.com/matttproud/golang_protobuf_extensions
+  version: c182affec369e30f25d3eb8cd8a478dee585ae7d
+  subpackages:
+  - pbutil
+- name: github.com/prometheus/client_golang
+  version: 505eaef017263e299324067d40ca2c48f6a2cf50
+  subpackages:
+  - prometheus
+  - prometheus/internal
+- name: github.com/prometheus/client_model
+  version: fd36f4220a901265f90734c3183c5f0c91daa0b8
+  subpackages:
+  - go
+- name: github.com/prometheus/common
+  version: cfeb6f9992ffa54aaa4f2170ade4067ee478b250
+  subpackages:
+  - expfmt
+  - internal/bitbucket.org/ww/goautoneg
+  - log
+  - model
+  - version
+- name: github.com/prometheus/procfs
+  version: ea9eea63887261e4d8ed8315f4078e88d540c725
+- name: github.com/sirupsen/logrus
+  version: 9b3cdde74fbe9443d704467498a7dcb61a79de9b
+- name: golang.org/x/sys
+  version: 81d4e9dc473e5e8c933f2aaeba2a3d81efb9aed2
+  subpackages:
+  - unix
+  - windows
+  - windows/registry
+  - windows/svc/eventlog
+- name: gopkg.in/alecthomas/kingpin.v2
+  version: 947dcec5ba9c011838740e680966fd7087a71d0d
+testImports: []
