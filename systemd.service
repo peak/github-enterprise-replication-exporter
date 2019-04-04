@@ -1,0 +1,12 @@
+[Unit]
+Description=GHE Replication Exporter
+
+[Service]
+Restart=on-failure
+ExecStart=/bin/bash -c '/home/admin/github-enterprise-replication-exporter --web.listen-address=":9169"'
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=ghe-repl-exporter
+
+[Install]
+WantedBy=default.target
