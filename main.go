@@ -53,15 +53,13 @@ func NewExporter(binaryPath *string) (*Exporter, error) {
 	}, nil
 }
 
-// Describe describes all the metrics ever exported by the Aviatrix exporter. It
+// Describe describes all the metrics ever exported by the GHE Replication exporter. It
 // implements prometheus.Collector.
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- up
 	ch <- service
 }
 
-// Collect fetches the stats from configured Aviatrix location and delivers them
-// as Prometheus metrics. It implements prometheus.Collector.
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	status, err := exec.Command(*e.replStatus).Output()
 	var retValue float64
