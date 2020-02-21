@@ -2,14 +2,16 @@ package main
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
-	"github.com/prometheus/common/version"
-	"gopkg.in/alecthomas/kingpin.v2"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/log"
+	"github.com/prometheus/common/version"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 const (
@@ -32,6 +34,9 @@ var (
 type Exporter struct {
 	replStatus *string
 	role       string
+	status     []byte
+	retValue   float64
+	locker     uint32
 }
 
 // NewExporter returns an initialized Exporter.
@@ -53,6 +58,19 @@ func NewExporter(binaryPath *string) (*Exporter, error) {
 	}, nil
 }
 
+func (e *Exporter) checkReplication() {
+	if !atomic.CompareAndSwapUint32(&e.locker, 0, 1) {
+		return
+	}
+	defer atomic.StoreUint32(&e.locker, 0)
+	status, err := exec.Command(*e.replStatus).Output()
+	e.retValue = 0
+	if err != nil {
+		e.retValue = 1
+	}
+	e.status = status
+}
+
 // Describe describes all the metrics ever exported by the GHE Replication exporter. It
 // implements prometheus.Collector.
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
@@ -61,17 +79,12 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-	status, err := exec.Command(*e.replStatus).Output()
-	var retValue float64
-	retValue = 0
-	if err != nil {
-		retValue = 1
-	}
+	e.checkReplication()
 	ch <- prometheus.MustNewConstMetric(
-		up, prometheus.GaugeValue, retValue, e.role,
+		up, prometheus.GaugeValue, e.retValue, e.role,
 	)
-	log.Debugln(string(status))
-	parsed := strings.Split(string(status), "\n")
+	log.Debugln(string(e.status))
+	parsed := strings.Split(string(e.status), "\n")
 	for _, line := range parsed {
 		l := strings.Split(line, " ")
 		if len(l) < 2 {
@@ -81,9 +94,9 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		log.Debugln(l)
 		var serviceRetValue float64
 		if l[0] == "OK:" {
-			serviceRetValue = 0;
+			serviceRetValue = 0
 		} else {
-			serviceRetValue = 1;
+			serviceRetValue = 1
 		}
 		ch <- prometheus.MustNewConstMetric(
 			service, prometheus.GaugeValue, serviceRetValue, l[1], e.role,
