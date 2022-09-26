@@ -11,7 +11,6 @@ import (
 	"github.com/peak/picolo"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/version"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 const (
@@ -108,16 +107,14 @@ func init() {
 }
 
 func main() {
-	var ( //TODO
-		listenAddress     = kingpin.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":9169").String()
-		metricsPath       = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").String()
-		gheReplStatusPath = kingpin.Flag("ghe.ReplStatusPath", "Path where ghe-repl-status can be found.").Default("/usr/local/bin/ghe-repl-status").String()
-		logLevel          = flag.String("log", "info", "Log level (debug/info/warning/error)")
+	var (
+		listenAddress     = flag.String("listen-address", ":9169", "Address to listen on for web interface and telemetry")
+		metricsPath       = flag.String("metrics-path", "/metrics", "Path under which to expose metrics")
+		gheReplStatusPath = flag.String("ghe-repl-status-path", "/usr/local/bin/ghe-repl-status", "Path where ghe-repl-status can be found")
+		logLevel          = flag.String("log-level", "info", "Log level (debug/info/warning/error)")
 	)
 
-	kingpin.Version(version.Print("github_replication_exporter"))
-	kingpin.HelpFlag.Short('h')
-	kingpin.Parse()
+	flag.Parse()
 
 	picoloLogLevel, _ := picolo.LevelFromString(*logLevel)
 
@@ -126,7 +123,7 @@ func main() {
 		picolo.WithLevel(picoloLogLevel),
 	)
 
-	logger.Infof("Starting github_replication_exporter, version: ", version.Info()) //TODO
+	logger.Infof("Starting github_replication_exporter, version: ", version.Info())
 
 	exporter, err := NewExporter(gheReplStatusPath)
 	if err != nil {
