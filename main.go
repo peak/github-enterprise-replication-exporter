@@ -1,14 +1,15 @@
 package main
 
 import (
+	"flag"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
 
+	"github.com/peak/picolo"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -28,6 +29,7 @@ var (
 		"Replicated service status",
 		[]string{"service", "role"}, nil,
 	)
+	logger *picolo.Logger
 )
 
 type Exporter struct {
@@ -40,15 +42,15 @@ type Exporter struct {
 // NewExporter returns an initialized Exporter.
 func NewExporter(binaryPath *string) (*Exporter, error) {
 	if _, err := os.Stat(*binaryPath); os.IsNotExist(err) {
-		log.Fatalf("ghe-repl-status not found on path: %v", *binaryPath)
+		logger.Errorf("ghe-repl-status not found on path: %v", *binaryPath)
 	}
 	// Maybe implement other black magic for checks
 	cmdArgs := []string{"-r"}
 	role, err := exec.Command(*binaryPath, cmdArgs...).Output()
 	if err != nil {
-		log.Fatalf("Error running %v: %s", *binaryPath, err)
+		logger.Errorf("Error running %v: %s", *binaryPath, err)
 	}
-	log.Debugf("The role of GHE server is %s", role)
+	logger.Debugf("The role of GHE server is %s", role)
 	return &Exporter{
 		replStatus: binaryPath,
 		role:       strings.TrimSuffix(string(role), "\n"),
@@ -62,7 +64,7 @@ func (e *Exporter) checkReplication() {
 	defer atomic.StoreUint32(&e.locker, 0)
 	status, err := exec.Command(*e.replStatus).Output()
 	if err != nil {
-		log.Fatalf("Error during replication check while running %v: %s", *e.replStatus, err)
+		logger.Errorf("Error during replication check while running %v: %s", *e.replStatus, err)
 	}
 	e.status = status
 }
@@ -80,7 +82,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	)
 
 	e.checkReplication()
-	log.Debugf("Status output: %s", string(e.status))
+	logger.Debugf("Status output: %s", string(e.status))
 
 	for _, line := range strings.Split(string(e.status), "\n") {
 		l := strings.Split(line, " ")
@@ -88,7 +90,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 			// We hit empty line, just skip
 			continue
 		}
-		log.Debugf("Parsed: %s", l)
+		logger.Debugf("Parsed: %s", l)
 		if l[0] == "OK:" {
 			ch <- prometheus.MustNewConstMetric(
 				service, prometheus.GaugeValue, 1, l[1], e.role,
@@ -106,23 +108,29 @@ func init() {
 }
 
 func main() {
-	var (
+	var ( //TODO
 		listenAddress     = kingpin.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":9169").String()
 		metricsPath       = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").String()
 		gheReplStatusPath = kingpin.Flag("ghe.ReplStatusPath", "Path where ghe-repl-status can be found.").Default("/usr/local/bin/ghe-repl-status").String()
+		logLevel          = flag.String("log", "info", "Log level (debug/info/warning/error)")
 	)
 
-	log.AddFlags(kingpin.CommandLine)
 	kingpin.Version(version.Print("github_replication_exporter"))
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 
-	log.Infof("Starting github_replication_exporter, ", version.Info())
-	log.Infof("Build context: ", version.BuildContext())
+	picoloLogLevel, _ := picolo.LevelFromString(*logLevel)
+
+	logger := picolo.New(
+		picolo.WithPrefix("github-enterprise-replication-exporter:"),
+		picolo.WithLevel(picoloLogLevel),
+	)
+
+	logger.Infof("Starting github_replication_exporter, version: ", version.Info()) //TODO
 
 	exporter, err := NewExporter(gheReplStatusPath)
 	if err != nil {
-		log.Fatalln(err)
+		logger.Errorf("Error creating new exporter", err)
 	}
 	prometheus.MustRegister(exporter)
 
@@ -141,6 +149,6 @@ func main() {
              </html>`))
 	})
 
-	log.Infof("Listening on %s", *listenAddress)
-	log.Fatal(http.ListenAndServe(*listenAddress, nil))
+	logger.Infof("Listening on %s", *listenAddress)
+	logger.Errorf("%s", http.ListenAndServe(*listenAddress, nil))
 }
