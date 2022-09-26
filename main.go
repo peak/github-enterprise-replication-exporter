@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -41,17 +40,16 @@ type Exporter struct {
 
 // NewExporter returns an initialized Exporter.
 func NewExporter(binaryPath *string) (*Exporter, error) {
-	log.Debugln("Checking env")
 	if _, err := os.Stat(*binaryPath); os.IsNotExist(err) {
-		log.Fatalln("ghe-repl-status cound not be found")
+		log.Fatalf("ghe-repl-status not found on path: %v", *binaryPath)
 	}
 	// Maybe implement other black magic for checks
 	cmdArgs := []string{"-r"}
 	role, err := exec.Command(*binaryPath, cmdArgs...).Output()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error running %v: %s", *binaryPath, err)
 	}
-	fmt.Printf("The role of GHE server is %s", role)
+	log.Debugf("The role of GHE server is %s", role)
 	return &Exporter{
 		replStatus: binaryPath,
 		role:       strings.TrimSuffix(string(role), "\n"),
@@ -83,15 +81,15 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(
 		up, prometheus.GaugeValue, e.retValue, e.role,
 	)
-	log.Debugln(string(e.status))
-	parsed := strings.Split(string(e.status), "\n")
-	for _, line := range parsed {
+	log.Debugf("Status output: %s", string(e.status))
+
+	for _, line := range strings.Split(string(e.status), "\n") {
 		l := strings.Split(line, " ")
 		if len(l) < 2 {
-			log.Debugln("We hit empty line, just skip")
+			// We hit empty line, just skip
 			continue
 		}
-		log.Debugln(l)
+		log.Debugf("Parsed: %s", l)
 		var serviceRetValue float64
 		if l[0] == "OK:" {
 			serviceRetValue = 0
@@ -120,8 +118,8 @@ func main() {
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 
-	log.Infoln("Starting github_replication_exporter", version.Info())
-	log.Infoln("Build context", version.BuildContext())
+	log.Infof("Starting github_replication_exporter, ", version.Info())
+	log.Infof("Build context: ", version.BuildContext())
 
 	exporter, err := NewExporter(gheReplStatusPath)
 	if err != nil {
@@ -144,6 +142,6 @@ func main() {
              </html>`))
 	})
 
-	log.Infoln("Listening on", *listenAddress)
+	log.Infof("Listening on %s", *listenAddress)
 	log.Fatal(http.ListenAndServe(*listenAddress, nil))
 }
