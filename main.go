@@ -34,7 +34,6 @@ type Exporter struct {
 	replStatus *string
 	role       string
 	status     []byte
-	retValue   float64
 	locker     uint32
 }
 
@@ -62,9 +61,8 @@ func (e *Exporter) checkReplication() {
 	}
 	defer atomic.StoreUint32(&e.locker, 0)
 	status, err := exec.Command(*e.replStatus).Output()
-	e.retValue = 0
 	if err != nil {
-		e.retValue = 1
+		log.Fatalf("Error during replication check while running %v: %s", *e.replStatus, err)
 	}
 	e.status = status
 }
@@ -77,10 +75,11 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-	e.checkReplication()
 	ch <- prometheus.MustNewConstMetric(
-		up, prometheus.GaugeValue, e.retValue, e.role,
+		up, prometheus.GaugeValue, 1, e.role,
 	)
+
+	e.checkReplication()
 	log.Debugf("Status output: %s", string(e.status))
 
 	for _, line := range strings.Split(string(e.status), "\n") {
@@ -90,15 +89,15 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 			continue
 		}
 		log.Debugf("Parsed: %s", l)
-		var serviceRetValue float64
 		if l[0] == "OK:" {
-			serviceRetValue = 0
+			ch <- prometheus.MustNewConstMetric(
+				service, prometheus.GaugeValue, 1, l[1], e.role,
+			)
 		} else {
-			serviceRetValue = 1
+			ch <- prometheus.MustNewConstMetric(
+				service, prometheus.GaugeValue, 0, l[1], e.role,
+			)
 		}
-		ch <- prometheus.MustNewConstMetric(
-			service, prometheus.GaugeValue, serviceRetValue, l[1], e.role,
-		)
 	}
 }
 
