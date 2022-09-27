@@ -66,11 +66,13 @@ func (e *Exporter) checkReplication() error {
 		return nil
 	}
 	defer atomic.StoreUint32(&e.locker, 0)
-	status, err := exec.Command(*e.replStatus).Output()
-	if err != nil {
-		return fmt.Errorf("error during replication check while running %v: %s", *e.replStatus, err)
+	if e.role == "replica" {
+		status, err := exec.Command(*e.replStatus).Output()
+		if err != nil {
+			return fmt.Errorf("error during replication check while running %v: %s", *e.replStatus, err)
+		}
+		e.status = status
 	}
-	e.status = status
 	return nil
 }
 
