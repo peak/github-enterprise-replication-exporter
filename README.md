@@ -1,37 +1,33 @@
 #  Github Enterprise Replication Exporter
 
-This application is designed to parse ghe-repl-status and export it as prometheus metrics. It is our current way of scraping status.
+This application is designed to parse ghe-repl-status and export it as Prometheus metrics
 
-#### Exported information
+## Build
 
-Exports 2 metrics
+- Binary build:
 
-###### github_replication_exporter_replicated_service
-
-All replicated services are parsed and returned. 0 means that service is healthy, and 1 is unhealthy.
-
-| label   | value  |  
-|---|---|
-| role  | primary or replica | 
-| service | any replicated service returned by ghe-repl-status |
-
-
-###### github_replication_exporter_up 
-
-The gole of this metric would be to monitor that replica role is 0. Primary node throws an error, and 1 is given back, but it is still possible to see that primary node has also exporter running.
-
-| label   | value  |  
-|---|---|
-| role  | primary or replica | 
-
-####  Prometheus Alert examples
-
-```bazaar
-TBD
+```shell
+go build -ldflags="-X 'main.version=`git describe --tags --abbrev=0`'" .
 ```
 
-#### Docker
+- Docker build:
 
-You can test quickly with running following command:
+```shell
+docker build -t peakcom/github-enterprise-replication-exporter .
+```
 
-`docker run peakcom/github-enterprise-replication-exporter:latest`
+## Usage
+
+```
+Usage of /github-enterprise-replication-exporter:
+  -ghe-repl-status-path string
+        Path where ghe-repl-status can be found (default "/usr/local/bin/ghe-repl-status")
+  -listen-address string
+        Address to listen on for web interface and telemetry (default ":9169")
+  -log-level string
+        Log level (debug/info/warning/error) (default "info")
+  -metrics-path string
+        Path under which to expose metrics (default "/metrics")
+  -version
+        Prints version
+```

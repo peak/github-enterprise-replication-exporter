@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,10 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/peak/picolo"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/log"
-	"github.com/prometheus/common/version"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 const (
@@ -29,46 +28,67 @@ var (
 		"Replicated service status",
 		[]string{"service", "role"}, nil,
 	)
+	scrapeError = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Name:      "status_scrape_error_total",
+		Help:      "Total number of error while scraping.",
+	})
+	version string = "development"
 )
 
 type Exporter struct {
 	replStatus *string
 	role       string
 	status     []byte
-	retValue   float64
 	locker     uint32
+	logger     *picolo.Logger
 }
 
 // NewExporter returns an initialized Exporter.
-func NewExporter(binaryPath *string) (*Exporter, error) {
-	log.Debugln("Checking env")
-	if _, err := os.Stat(*binaryPath); os.IsNotExist(err) {
-		log.Fatalln("ghe-repl-status cound not be found")
-	}
-	// Maybe implement other black magic for checks
-	cmdArgs := []string{"-r"}
-	role, err := exec.Command(*binaryPath, cmdArgs...).Output()
+func NewExporter(binaryPath *string, logLevel *string) *Exporter {
+
+	picoloLogLevel, err := picolo.LevelFromString(*logLevel)
 	if err != nil {
-		log.Fatal(err)
+		picoloLogLevel, _ = picolo.LevelFromString("info")
 	}
-	fmt.Printf("The role of GHE server is %s", role)
+
 	return &Exporter{
 		replStatus: binaryPath,
-		role:       strings.TrimSuffix(string(role), "\n"),
-	}, nil
+		logger: picolo.New(
+			picolo.WithPrefix("github-enterprise-replication-exporter:"),
+			picolo.WithLevel(picoloLogLevel),
+		),
+	}
 }
 
-func (e *Exporter) checkReplication() {
+func (e *Exporter) checkReplication() error {
 	if !atomic.CompareAndSwapUint32(&e.locker, 0, 1) {
-		return
+		return nil
 	}
 	defer atomic.StoreUint32(&e.locker, 0)
-	status, err := exec.Command(*e.replStatus).Output()
-	e.retValue = 0
-	if err != nil {
-		e.retValue = 1
+	if e.role == "replica" {
+		status, err := exec.Command(*e.replStatus).Output()
+		if err != nil {
+			return fmt.Errorf("error during replication check while running %v: %s", *e.replStatus, err)
+		}
+		e.status = status
 	}
-	e.status = status
+	return nil
+}
+
+func (e *Exporter) setRole() {
+	if _, err := os.Stat(*e.replStatus); os.IsNotExist(err) {
+		e.logger.Errorf("ghe-repl-status not found on path: %v", *e.replStatus)
+		os.Exit(1)
+	}
+
+	cmdArgs := []string{"-r"}
+	role, err := exec.Command(*e.replStatus, cmdArgs...).Output()
+	if err != nil {
+		e.logger.Errorf("Error running %v: %s", *e.replStatus, err)
+		os.Exit(1)
+	}
+	e.role = strings.TrimSuffix(string(role), "\n")
 }
 
 // Describe describes all the metrics ever exported by the GHE Replication exporter. It
@@ -76,57 +96,58 @@ func (e *Exporter) checkReplication() {
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- up
 	ch <- service
+	ch <- scrapeError.Desc()
 }
 
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-	e.checkReplication()
 	ch <- prometheus.MustNewConstMetric(
-		up, prometheus.GaugeValue, e.retValue, e.role,
+		up, prometheus.GaugeValue, 1, e.role,
 	)
-	log.Debugln(string(e.status))
-	parsed := strings.Split(string(e.status), "\n")
-	for _, line := range parsed {
+
+	if err := e.checkReplication(); err != nil {
+		scrapeError.Inc()
+		ch <- scrapeError
+		e.logger.Errorf("Scrape error: %s", err)
+	}
+
+	for _, line := range strings.Split(string(e.status), "\n") {
 		l := strings.Split(line, " ")
 		if len(l) < 2 {
-			log.Debugln("We hit empty line, just skip")
+			// We hit empty line, just skip
 			continue
 		}
-		log.Debugln(l)
-		var serviceRetValue float64
 		if l[0] == "OK:" {
-			serviceRetValue = 0
+			ch <- prometheus.MustNewConstMetric(
+				service, prometheus.GaugeValue, 1, l[1], e.role,
+			)
 		} else {
-			serviceRetValue = 1
+			ch <- prometheus.MustNewConstMetric(
+				service, prometheus.GaugeValue, 0, l[1], e.role,
+			)
 		}
-		ch <- prometheus.MustNewConstMetric(
-			service, prometheus.GaugeValue, serviceRetValue, l[1], e.role,
-		)
 	}
-}
-
-func init() {
-	prometheus.MustRegister(version.NewCollector("github_replication_exporter"))
 }
 
 func main() {
 	var (
-		listenAddress     = kingpin.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":9169").String()
-		metricsPath       = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").String()
-		gheReplStatusPath = kingpin.Flag("ghe.ReplStatusPath", "Path where ghe-repl-status can be found.").Default("/usr/local/bin/ghe-repl-status").String()
+		listenAddress     = flag.String("listen-address", ":9169", "Address to listen on for web interface and telemetry")
+		metricsPath       = flag.String("metrics-path", "/metrics", "Path under which to expose metrics")
+		gheReplStatusPath = flag.String("ghe-repl-status-path", "/usr/local/bin/ghe-repl-status", "Path where ghe-repl-status can be found")
+		logLevel          = flag.String("log-level", "info", "Log level (debug/info/warning/error)")
+		checkVersion      = flag.Bool("version", false, "Prints version")
 	)
 
-	log.AddFlags(kingpin.CommandLine)
-	kingpin.Version(version.Print("github_replication_exporter"))
-	kingpin.HelpFlag.Short('h')
-	kingpin.Parse()
+	flag.Parse()
 
-	log.Infoln("Starting github_replication_exporter", version.Info())
-	log.Infoln("Build context", version.BuildContext())
-
-	exporter, err := NewExporter(gheReplStatusPath)
-	if err != nil {
-		log.Fatalln(err)
+	if *checkVersion {
+		fmt.Printf("Version: %q", version)
+		return
 	}
+
+	exporter := NewExporter(gheReplStatusPath, logLevel)
+	exporter.setRole()
+	exporter.logger.Infof("Starting github_replication_exporter, version: %s", version)
+
 	prometheus.MustRegister(exporter)
 
 	http.Handle(*metricsPath, prometheus.Handler())
@@ -139,11 +160,13 @@ func main() {
              <h2>Options</h2>
              </dl>
              <h2>Build</h2>
-             <pre>` + version.Info() + ` ` + version.BuildContext() + `</pre>
              </body>
              </html>`))
 	})
 
-	log.Infoln("Listening on", *listenAddress)
-	log.Fatal(http.ListenAndServe(*listenAddress, nil))
+	exporter.logger.Infof("Listening on %s", *listenAddress)
+	if err := http.ListenAndServe(*listenAddress, nil); err != nil {
+		exporter.logger.Errorf("%s", err)
+		os.Exit(1)
+	}
 }
