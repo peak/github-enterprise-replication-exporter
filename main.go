@@ -115,6 +115,10 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		if len(l) < 2 {
 			// We hit empty line, just skip
 			continue
+		} 
+		if l[0] == "Verifying" {
+			// This is a new line, which can be skiped
+			continue
 		}
 		if l[0] == "OK:" {
 			ch <- prometheus.MustNewConstMetric(
